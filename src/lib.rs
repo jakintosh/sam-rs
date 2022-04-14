@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use regex::Regex;
 use std::fmt::Display;
 use thiserror::Error;
@@ -92,64 +93,121 @@ fn parse_line<'a>(line: &'a str) -> Line<'a> {
 
     let (indent, text) = parse_indentations(line);
 
-    // determine if block
-    if let Some((block_name_candidate, remainder)) = text.split_once(":") {
-        if is_valid_name_token(block_name_candidate) {
-            let name = block_name_candidate;
-            let mut attributes: Vec<(&'a str, &'a str)> = Vec::new();
-
-            let attributes_candidate = remainder;
-            let mut flow_candidate = remainder;
-
-            // parse an attribute candidate
-            if let Some(attributes_candidate) = attributes_candidate.strip_prefix("(") {
-                if let Some((attributes_string, remainder)) = attributes_candidate.split_once(")") {
-                    flow_candidate = remainder;
-                    for attribute_string in attributes_string.split(",").collect::<Vec<_>>() {
-                        if let Some((property, value)) = attribute_string.split_once("=") {
-                            attributes.push((property, value));
-                        } else {
-                            // malformed attribute?? no, doesn't need an equals
-                        }
-                    }
-                }
-            }
-
-            // parse flow candidate
-            let flow = match flow_candidate.is_empty() {
-                false => flow_candidate.strip_prefix(" "), // None if missing prefix
-                true => None,
-            };
-
-            return Line::Block {
-                indent,
-                name,
-                attributes,
-                flow,
-            };
-        }
+    if let Some(block_line) = parse_block_line(indent, text) {
+        return block_line;
     }
-
-    // determine if ordered list
-    if let Some((number_candidate, remainder)) = text.split_once(".") {
-        // make sure string before dot is number
-        if number_candidate.parse::<u32>().is_ok() {
-            // make sure there's a space after the dot
-            if let Some(flow) = remainder.strip_prefix(" ") {
-                return Line::OrderedListItem { indent, flow };
-            }
-        }
+    if let Some(ordered_list_line) = parse_ordered_list_item(indent, text) {
+        return ordered_list_line;
     }
-
-    // determine if unordered list
-    if let Some((asterisk_candidate, flow)) = text.split_once(" ") {
-        if asterisk_candidate.eq("*") {
-            return Line::UnorderedListItem { indent, flow };
-        }
+    if let Some(unordered_list_line) = parse_unordered_list_item(indent, text) {
+        return unordered_list_line;
     }
 
     // else its a paragraph
     Line::Paragraph { indent, flow: text }
+}
+
+fn parse_block_line<'a>(indent: u16, text: &'a str) -> Option<Line> {
+    // check for and split on required colon
+    let (name_candidate, remainder) = match text.split_once(":") {
+        Some((n, r)) => (n, r),
+        None => return None, // abort if no colon
+    };
+
+    // validate block name
+    let name = match is_valid_name_token(name_candidate) {
+        true => name_candidate,
+        false => return None, // abort if invalid name
+    };
+
+    // split attributes and flow
+    let (attributes_string, flow) = match remainder.strip_prefix("(") {
+        Some(attributes_candidate) => match attributes_candidate.split_once(")") {
+            Some((attributes, flow)) => (Some(attributes), flow),
+            None => (None, remainder),
+        },
+        None => (None, remainder),
+    };
+
+    // parse attributes string
+    let attributes = match attributes_string {
+        Some(attributes_string) => parse_attributes(attributes_string),
+        None => Vec::new(),
+    };
+
+    // parse flow string
+    let flow = match flow.is_empty() {
+        false => match flow.strip_prefix(" ") {
+            Some(flow) => Some(flow),
+            None => None,
+        },
+        true => None,
+    };
+
+    return Some(Line::Block {
+        indent,
+        name,
+        attributes,
+        flow,
+    });
+}
+
+fn parse_ordered_list_item(indent: u16, text: &str) -> Option<Line> {
+    // look for required '.'
+    let (number_candidate, flow) = match text.split_once(".") {
+        Some((n, r)) => (n, r),
+        None => return None,
+    };
+
+    // make sure number is valid
+    if !number_candidate.parse::<u32>().is_ok() {
+        return None;
+    }
+
+    // make sure flow has a space after the dot
+    let flow = match flow.strip_prefix(" ") {
+        Some(flow) => flow,
+        None => return None,
+    };
+
+    // make sure flow isn't empty
+    if flow.is_empty() {
+        return None;
+    }
+
+    return Some(Line::OrderedListItem { indent, flow });
+}
+
+fn parse_unordered_list_item(indent: u16, text: &str) -> Option<Line> {
+    // split on first space
+    let (asterisk_candidate, flow) = match text.split_once(" ") {
+        Some((a, f)) => (a, f),
+        None => return None,
+    };
+
+    // make sure required '*'
+    if !asterisk_candidate.eq("*") {
+        return None;
+    }
+
+    // make sure flow isn't empty
+    if flow.is_empty() {
+        return None;
+    }
+
+    return Some(Line::UnorderedListItem { indent, flow });
+}
+
+fn parse_attributes(attributes_string: &str) -> Vec<(&str, &str)> {
+    let mut attributes = Vec::new();
+    for a in attributes_string.split(",").collect::<Vec<_>>() {
+        if let Some((property, value)) = a.split_once("=") {
+            attributes.push((property, value));
+        } else {
+            // malformed attribute?? no, doesn't need an equals
+        }
+    }
+    attributes
 }
 
 fn parse_indentations<'a>(line: &str) -> (u16, &str) {
@@ -163,12 +221,10 @@ fn parse_indentations<'a>(line: &str) -> (u16, &str) {
 }
 
 fn is_valid_name_token(token: &str) -> bool {
-    let re = match Regex::new(r"\b[a-z]+(?:['-]?[a-z]+)*\b") {
-        Ok(re) => re,
-        Err(err) => panic!("Invalid Regex"),
-    };
-
-    re.is_match(token)
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"\b[a-z]+(?:['-]?[a-z]+)*\b").expect("Invalid Regex");
+    }
+    RE.is_match(token)
 }
 
 #[cfg(test)]
