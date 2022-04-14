@@ -1,0 +1,111 @@
+section: The Status Quo
+
+	section: Foundational Concepts
+
+		There are a lot of different things that people believe about how the world works. Most of 
+		the time, people get stuck arguing about those beliefs without realizing that nearly all 
+		ideas are built on top of other ideas, and that some ideas are more foundational than 
+		others. In modern society, the realm of politics is generally where we discuss some of the 
+		most foundational beliefs we all hold, on topics like work ethic, patriotism, education, or 
+		immigration. However, these political battleground topics are not philosophical 
+		foundations; they are built on even more layers that get deeper into existential questions.
+
+	section: Religious Foundations
+
+		In {Competitive Individualism}(em) (the dominant philosophical framework), one of the most 
+		foundational stories is that living things are separated from non-living things, and that 
+		human beings are the most advanced living organism, uniquely having the gift of thought, 
+		rational decision making, and perhaps even the spark of a soul.
+
+		In order for this idea to hold weight, it needs to stand on something more concrete and 
+		unquestionable. Historically, the backing for this idea comes from religious traditions, in 
+		which humanity was created in the image of God(s), being given special abilities to mark 
+		our special status as God's children.
+
+		1. Hello
+		2. Goodbye
+
+		section:(class="status-quo") Human Divinity
+			x-field: Religion
+			x-field: Theology
+			x-definition:
+
+				Human beings were created by God(s). Humans were created in the image of the 
+				divine, and given special capability and status in the world based on their 
+				relationship to the creator(s). Humans are separate and special from other living 
+				creatures.
+
+		From the present day it's easy to see how this idea developed, and it's core flaw in 
+		reasoning: it was created by starting with its premise ("we must be special") and then 
+		working backwards to justify that somehow. Early humans were sentient animals that 
+		developed advanced cognition and stumbled upon the same questions we're asking here, so 
+		over time they developed stories and traditions (religions) that answered their existential 
+		questions.
+
+	section: Scientific Foundations
+
+		In the modern day, scientific inquiry has given us new information about the mechanics of 
+		the universe, which has started to dismantle the old religious traditions' influence.
+
+		That brings us to our modern scientific understanding of humanity's role in the universe. 
+		At some point early on in our biology education, we learn about the hierarchy of life.
+
+		section:(class="status-quo") Hierarchy of Life
+			x-field: Philosophy
+			x-field: Biology
+			x-definition:
+
+				Organisms—like human beings—are at the top of a hierarchy. Organisms are made up of 
+				organs (like the brain, heart, and lungs for humans), and those organs are made up 
+				of tissues. Tissues are composed of cells, and cells are composed of organelles 
+				like the mitochondria and nucleus. Organelles are built out of molecules, molecules 
+				are built out of atoms, and atoms have components like electrons, protons, and 
+				neutrons.
+
+				The organisms at the top of the hierarchy are the individual plants and animals 
+				that exist and make changes in the world.
+
+		However, our scientific knowledge didn't develop all at once: new concepts emerge in small 
+		bits and pieces based off of the constantly growing body of past research. As science 
+		advanced, each new scientific understanding was made within the context of those religious 
+		foundations. So in practice, each small scientific discovery could slowly be absorbed into 
+		and reframed by the dominant worldview ("Human Divinity"). This isn't a flaw in the science 
+		itself, but in our interpretation of those facts.
+
+		Once again, this means our conclusion was reached backwards, just like the religious 
+		foundations. We started with the current assumption ("Humans are Divine and Special") and 
+		worked backwards to fit scientific concepts to match that story. If we were to rebuild our 
+		entire foundation from scratch with everything we know now, we might end up with a 
+		different story...
+
+	section: Human Exceptionalism
+
+		We've now looked at two different existential foundations, though both produce the same 
+		answer to the question {"Are humans special among living things?".}(strong) Whether through 
+		divinity bestowed by God or by being at the top of a biological hierarchy, both 
+		interpretations answer with humans being in a position of prominence and dominance within 
+		the natural world.
+
+		section:(class="proof")
+			x-given:
+				x-concept: Human Divinity
+				x-or:
+				x-concept: Hierarchy of Life
+			x-arrow-connector:
+			x-then:
+				section:(class="status-quo") Human Exceptionalism
+					x-field: Competitive Individualism
+					x-definition:
+
+						Human beings are unique and separate from the rest of the natural world,
+						whether through their religious connection to a deity, position at the
+						top of the biological hierarchy, or their distinct intellect and capacity
+						for scientific reasoning.
+
+		Human exceptionalism is the foundation that western society (and {Competitive 
+		Individualism}(em)) is built on. It's important to realize that, regardless of if you buy 
+		into this idea by itself, it informs many of our institutions, laws, and cultural norms. 
+		It's impossible to engage in modern society without interacting with this principle on a 
+		daily basis. We'll spend the rest of the article revisiting some key scientific concepts 
+		from the last hundred years that will help us assess this foundation, and ultimately build 
+		a new one.

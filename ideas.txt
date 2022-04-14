@@ -1,0 +1,82 @@
+on each line, we can determine:
+- indent level
+- block definition
+    - name validity
+    - attributes
+    - inline content
+- flow content
+    - chunks of content
+    - phrases
+
+how to determine an end to a block?
+- indent level went down (end of a flow and/or block(s))
+- new block at same indent (field/empty block)
+- end of file (end of all open blocks)
+- if paragraph, blank line
+
+take line
+check indentation
+  - if same
+    - if block, new block
+    - if was paragraph
+  - if increase
+split on colon
+  - no colon => break
+  - yes colon
+    - segment 1 is block definition
+      - no => break
+    - segment 2 has parenthesis
+      - yes => parse as attriubutes
+    - segment 2 has non-whitespace content
+      - yes => parse as text_content
+
+parse_line
+  -> block_header | flow_content ; 
+
+what indent means:
+    - same: either wrapped flow, or new sibling block
+      - error if flow start: incorrect paragraph indent
+    - shallower: new sibling of parent
+    - deeper: new child
+      - error if parent is flow
+
+parse line
+  - walk through line char by char, managing state
+
+state
+  - current state
+  - look for transitions
+  - build up string as we go (may be multiple string slices)
+
+iterate through source file, generating events
+as you go, look for errors, create elements
+
+hmm, maybe break the lines down semantically, like "is 
+indented x times from previous" "has valid block name prefix"
+and so on, and then make decisions in a more blocky way like
+that, instead of just like walking through every char
+
+line:
+  - has block definition
+    - REQ: before first space = '{valid name}:'
+    - OPT: attributes
+    - OPT: text_content
+  - has ordered list item
+    - REQ: before first space = '{num}.'
+  - has unordered list item
+    - REQ: before first space = '* '
+  - is blank
+    - REQ: trim().is_empty()
+  - else: is paragraph
+
+line state:
+  - normal (reading in blocks line by line)
+  - unordered list (currently consuming ul)
+  - ordered list (currently consuming ol)
+  - paragraph (currently consuming paragraph)
+
+read line
+- initial state
+- while lines
+  - get parsed line
+  - run transition

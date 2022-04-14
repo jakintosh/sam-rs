@@ -4,5 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "sam"
+path = "src/bin/sam.rs"
 
 [dependencies]
+anyhow = "1.0"
+clap = { version = "3.*", features = ["derive"] }
+regex = "1.5.5"
+thiserror = "1.0"
