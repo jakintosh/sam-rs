@@ -80,3 +80,30 @@ read line
 - while lines
   - get parsed line
   - run transition
+
+element
+  - has a name
+  - has ?attributes
+  - has ?associated-flow
+  - has ?children
+    - either CDATA or element
+
+element_stack
+  - has active element
+  - add child
+  - if indent, push last child as active
+  - if outdent, pop active element
+
+open(e)
+  - set {e.parent} to {active}
+  - push() {e} to stack
+close()
+  - pop() stack
+
+if indent
+  - open
+if no indent
+  - close
+  - open
+if unindent
+  - close

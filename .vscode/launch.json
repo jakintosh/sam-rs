@@ -26,24 +26,6 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'sam'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=sam",
-                    "--package=sam-rs"
-                ],
-                "filter": {
-                    "name": "sam",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
             "name": "Debug unit tests in executable 'sam'",
             "cargo": {
                 "args": [
