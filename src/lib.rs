@@ -179,18 +179,29 @@ impl Element {
             if !flows.is_empty() {
                 // only flow
                 if parent_is_flow {
-                    format!("<{name}>{flow}</{name}>", name = name, flow = flows)
+                    format!(
+                        "<{name}{attr}>{flow}</{name}>",
+                        name = name,
+                        flow = flows,
+                        attr = attributes
+                    )
                 } else {
                     format!(
-                        "{tabs}<{name}>\n{tabs}\t{flow}\n{tabs}</{name}>",
+                        "{tabs}<{name}{attr}>\n{tabs}\t{flow}\n{tabs}</{name}>",
                         tabs = "\t".repeat(indent),
                         name = name,
-                        flow = flows
+                        flow = flows,
+                        attr = attributes
                     )
                 }
             } else {
                 // none
-                format!("{tabs}<{name}/>", tabs = "\t".repeat(indent), name = name)
+                format!(
+                    "{tabs}<{name}{attr}/>",
+                    tabs = "\t".repeat(indent),
+                    name = name,
+                    attr = attributes
+                )
             }
         }
     }
@@ -589,10 +600,11 @@ struct Annotation {
     attributes: Option<Vec<Attribute>>,
 }
 fn parse_annotation(annotation_string: &str) -> Annotation {
-    Annotation {
-        name: String::from(annotation_string),
-        attributes: None,
-    }
+    let (name, attributes) = match annotation_string.split_once("|") {
+        Some((name, attributes)) => (String::from(name), parse_attributes(attributes)),
+        None => (String::from(annotation_string), None),
+    };
+    Annotation { name, attributes }
 }
 
 struct ContainedString {
@@ -790,12 +802,17 @@ mod test {
 
     #[test]
     fn test_parse_flow() {
-        let flow = Flow(String::from(r"Hello {world}(test)(test2) goodbye"));
+        let flow = Flow(String::from(
+            r#"Hello {world}(test|attr="good")(test2) goodbye"#,
+        ));
         let expect = vec![
             Child::CharacterData("Hello ".to_string()),
             Child::Element(Element {
                 name: "test".to_string(),
-                attributes: None,
+                attributes: Some(vec![Attribute::Pair {
+                    key: "attr".to_string(),
+                    value: r#""good""#.to_string(),
+                }]),
                 flow: vec![Child::Element(Element {
                     name: "test2".to_string(),
                     attributes: None,
