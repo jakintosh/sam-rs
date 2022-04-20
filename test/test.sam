@@ -1,0 +1,35 @@
+html:
+
+	head:
+		meta:(charset="utf-8")
+		meta:(rel="stylesheet",type="text/css",href="../css/style.css")
+		title: SAM Parser Overview
+
+	body:
+		nav:
+			a:(href="./home.html") Home
+			a:(href="./posts.html") Posts
+			a:(href="./about.html") About
+
+		article: Semantic Authoring Markdown
+
+			This is a cute little post about writing in Semantic Authoring Markdown. 
+			You can write little paragraphs like this, and add {annotations}(em) like 
+			that. A "block" starts with `tag-name:`, followed by attributes in 
+			parenthesis. After the block definition is a flow that can be annotated. 
+			A flow without an explicit block definition (like this one) is assumed to be a 
+			paragraph. Paragraphs end with a blank line.
+
+			You can also have built in support for ordered and unordered lists:
+
+			1. First item
+			2. Second item
+			3. Third item
+
+			* Some item
+			* Some other item
+
+			You can also nest multiple annotations {like this}(em)(strong), and even give 
+			annotations attributes {like this}(a|href="https://website.com").
+
+			And that's basically it for now.
