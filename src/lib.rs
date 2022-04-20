@@ -4,11 +4,11 @@ use std::fmt::Display;
 use thiserror::Error;
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Attribute<'a> {
-    Tag(&'a str),
-    Pair { key: &'a str, value: &'a str },
+pub enum Attribute {
+    Tag(String),
+    Pair { key: String, value: String },
 }
-impl<'a> Display for Attribute<'a> {
+impl Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Attribute::Tag(tag) => write!(f, "{}", tag),
@@ -18,48 +18,85 @@ impl<'a> Display for Attribute<'a> {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Flow<'a>(Vec<&'a str>);
-impl<'a> From<&'a str> for Flow<'a> {
-    fn from(s: &'a str) -> Self {
-        Flow(vec![s])
+pub struct Flow(String);
+impl From<&str> for Flow {
+    fn from(s: &str) -> Self {
+        Flow(String::from(s))
     }
 }
-impl<'a> Flow<'a> {
-    pub(crate) fn append(&mut self, flow: &mut Flow<'a>) {
-        self.0.append(&mut flow.0)
+impl Flow {
+    pub(crate) fn append(&mut self, flow: &mut Flow) {
+        self.0.push_str(&mut flow.0)
     }
-}
-impl<'a> Display for Flow<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut flow = String::new();
-        for s in &self.0 {
-            flow.push_str(s);
+    pub(crate) fn to_elements(&self) -> Vec<Child> {
+        let mut elements = Vec::new();
+        let mut flow = self.0.clone();
+
+        while let Some(ContainedString {
+            before,
+            inner,
+            mut after,
+        }) = parse_contained_string(flow.as_str(), "{", "}")
+        {
+            // before is char data
+            elements.push(Child::CharacterData(before));
+
+            // inner is an annotated phrase
+            // build a vec of annotations
+            let mut annotations = Vec::new();
+            while let (Some(annotation), next) = parse_immediate_parentheses(&after) {
+                let annotation = parse_annotation(&annotation);
+                annotations.push(annotation);
+                after = String::from(next);
+            }
+            // unwind the annotation stack and wrap the inner in them
+            let mut element = Child::CharacterData(inner);
+            while let Some(annotation) = annotations.pop() {
+                let mut parent = Element::new(&annotation.name, annotation.attributes, None);
+                parent.flow.push(element);
+                element = Child::Element(parent);
+            }
+            elements.push(element);
+
+            // remainder is parsed again
+            flow = after;
         }
-        write!(f, "{}", flow)
+
+        // push last bit of unprocessed flow
+        if !flow.is_empty() {
+            elements.push(Child::CharacterData(flow));
+        }
+
+        elements
+    }
+}
+impl Display for Flow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Element<'a> {
-    name: &'a str,
-    attributes: Option<Vec<Attribute<'a>>>,
-    flow: Option<Flow<'a>>,
-    children: Vec<Child<'a>>,
+pub struct Element {
+    name: String,
+    attributes: Option<Vec<Attribute>>,
+    flow: Vec<Child>,
+    blocks: Vec<Child>,
 }
 #[derive(PartialEq, Debug)]
-pub enum Child<'a> {
-    Element(Element<'a>),
-    CharacterData(&'a str),
+pub enum Child {
+    Element(Element),
+    CharacterData(String),
 }
-impl<'a> Child<'a> {
-    pub(crate) fn to_xml(&self, indent: usize) -> String {
+impl Child {
+    pub(crate) fn to_xml(&self, indent: usize, parent_is_flow: bool) -> String {
         match self {
-            Child::Element(e) => e.to_xml(indent),
-            Child::CharacterData(s) => String::from(s.clone()),
+            Child::Element(e) => e.to_xml(indent, parent_is_flow),
+            Child::CharacterData(s) => s.clone(),
         }
     }
 }
-impl<'a> Display for Element<'a> {
+impl Display for Element {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = format!("{}", self.name);
         let attributes = match &self.attributes {
@@ -73,26 +110,28 @@ impl<'a> Display for Element<'a> {
         write!(f, "<{}{}>", name, attributes)
     }
 }
-impl<'a> Element<'a> {
+impl Element {
     pub(crate) fn new(
-        name: &'a str,
-        attributes: Option<Vec<Attribute<'a>>>,
-        flow: Option<Flow<'a>>,
-    ) -> Element<'a> {
+        name: &str,
+        attributes: Option<Vec<Attribute>>,
+        flow: Option<Flow>,
+    ) -> Element {
+        let name = String::from(name);
+        let flow = match flow {
+            Some(flow) => flow.to_elements(),
+            None => Vec::new(),
+        };
         Element {
             name,
             attributes,
             flow,
-            children: Vec::new(),
+            blocks: Vec::new(),
         }
     }
-    // pub(crate) fn append_character_data(&mut self, cdata: &'a str) {
-    //     self.children.push(Child::CharacterData(cdata))
-    // }
-    pub(crate) fn add_child_element(&mut self, child: Element<'a>) {
-        self.children.push(Child::Element(child))
+    pub(crate) fn add_child_element(&mut self, child: Element) {
+        self.blocks.push(Child::Element(child))
     }
-    pub(crate) fn to_xml(&self, indent: usize) -> String {
+    pub(crate) fn to_xml(&self, indent: usize, parent_is_flow: bool) -> String {
         let name = format!("{}", self.name);
         let attributes = match &self.attributes {
             Some(attrs) => attrs
@@ -102,40 +141,69 @@ impl<'a> Element<'a> {
                 .join(""),
             None => String::from(""),
         };
-        if self.children.is_empty() {
-            format!(
-                "{tabs}{element}",
-                element = format!("<{}{}/>", name, attributes),
-                tabs = "  ".repeat(indent),
-            )
+        let flows = self
+            .flow
+            .iter()
+            .map(|c| c.to_xml(indent + 1, true))
+            .collect::<Vec<_>>()
+            .join("");
+        let blocks = self
+            .blocks
+            .iter()
+            .map(|c| c.to_xml(indent + 1, false))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if !blocks.is_empty() {
+            if !flows.is_empty() {
+                // flow + block
+                format!(
+                    "{tabs}<{name}{attr}>\n{tabs}\t<title>\n{tabs}\t\t{flow}\n{tabs}\t</title>\n{bloc}\n{tabs}</{name}>",
+                    tabs = "\t".repeat(indent),
+                    name = name,
+                    attr = attributes,
+                    flow = flows,
+                    bloc = blocks,
+                )
+            } else {
+                // only block
+                format!(
+                    "{tabs}<{name}{attr}>\n{bloc}\n{tabs}</{name}>",
+                    tabs = "\t".repeat(indent),
+                    name = name,
+                    attr = attributes,
+                    bloc = blocks
+                )
+            }
         } else {
-            let open = format!("<{}{}>", name, attributes);
-            let inner = self
-                .children
-                .iter()
-                .map(|c| c.to_xml(indent + 1))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let close = format!("</{}>", name);
-            format!(
-                "{tabs}{}\n{}\n{tabs}{}",
-                open,
-                inner,
-                close,
-                tabs = "  ".repeat(indent),
-            )
+            if !flows.is_empty() {
+                // only flow
+                if parent_is_flow {
+                    format!("<{name}>{flow}</{name}>", name = name, flow = flows)
+                } else {
+                    format!(
+                        "{tabs}<{name}>\n{tabs}\t{flow}\n{tabs}</{name}>",
+                        tabs = "\t".repeat(indent),
+                        name = name,
+                        flow = flows
+                    )
+                }
+            } else {
+                // none
+                format!("{tabs}<{name}/>", tabs = "\t".repeat(indent), name = name)
+            }
         }
     }
 }
 
-pub struct Tree<'source> {
-    pub root: Element<'source>,
+pub struct Tree {
+    pub root: Element,
 }
-impl<'source> Tree<'source> {
-    pub fn parse(source: &'source str) -> Result<Tree<'source>, ParserError> {
+impl Tree {
+    pub fn parse(source: &str) -> Result<Tree, ParserError> {
         let mut parse_root = parse(&source)?;
-        let root = match parse_root.children.is_empty() {
-            false => match parse_root.children.remove(0) {
+        let root = match parse_root.blocks.is_empty() {
+            false => match parse_root.blocks.remove(0) {
                 Child::Element(root) => root,
                 Child::CharacterData(_) => return Err(ParserError::InvalidRootCharacterData),
             },
@@ -145,7 +213,7 @@ impl<'source> Tree<'source> {
         Ok(Tree { root })
     }
     pub fn to_xml(&self) -> String {
-        self.root.to_xml(0)
+        self.root.to_xml(0, false)
     }
 }
 
@@ -179,17 +247,17 @@ pub enum ParserError {
     MoreThanOneIndent { line: usize, indents: i32 },
 }
 
-struct Stack<'a> {
-    stack: Vec<Element<'a>>,
+struct Stack {
+    stack: Vec<Element>,
 }
-impl<'a> Stack<'a> {
-    pub(crate) fn new(root: Element<'a>) -> Stack<'a> {
+impl Stack {
+    pub(crate) fn new(root: Element) -> Stack {
         Stack { stack: vec![root] }
     }
     pub(crate) fn get_indent_delta(&self, indent: u16) -> i32 {
         (indent as i32) - (self.stack.len() as i32 - 2)
     }
-    pub(crate) fn open(&mut self, element: Element<'a>) {
+    pub(crate) fn open(&mut self, element: Element) {
         self.stack.push(element);
     }
     pub(crate) fn close(&mut self) {
@@ -203,7 +271,7 @@ impl<'a> Stack<'a> {
         };
         last.add_child_element(e);
     }
-    pub(crate) fn finalize(&mut self) -> Element<'a> {
+    pub(crate) fn finalize(&mut self) -> Element {
         while self.stack.len() > 1 {
             self.close();
         }
@@ -214,7 +282,7 @@ impl<'a> Stack<'a> {
     }
 }
 
-fn parse<'a>(source: &'a str) -> Result<Element<'a>, ParserError> {
+fn parse(source: &str) -> Result<Element, ParserError> {
     let mut lines = source.lines().peekable();
     let root = Element::new("@parse-root", None, None);
     let mut stack = Stack::new(root);
@@ -341,20 +409,20 @@ enum Line<'a> {
     Block {
         indent: u16,
         name: &'a str,
-        attributes: Option<Vec<Attribute<'a>>>,
-        flow: Option<Flow<'a>>,
+        attributes: Option<Vec<Attribute>>,
+        flow: Option<Flow>,
     },
     OrderedListItem {
         indent: u16,
-        flow: Flow<'a>,
+        flow: Flow,
     },
     UnorderedListItem {
         indent: u16,
-        flow: Flow<'a>,
+        flow: Flow,
     },
     Paragraph {
         indent: u16,
-        flow: Flow<'a>,
+        flow: Flow,
     },
     Blank,
 }
@@ -412,17 +480,11 @@ fn parse_block<'a>(indent: u16, text: &'a str) -> Option<Line> {
     };
 
     // split attributes and flow
-    let (attributes_string, flow) = match remainder.strip_prefix("(") {
-        Some(attributes_candidate) => match attributes_candidate.split_once(")") {
-            Some((attributes, flow)) => (Some(attributes), flow),
-            None => (None, remainder),
-        },
-        None => (None, remainder),
-    };
+    let (attributes_string, flow) = parse_immediate_parentheses(remainder);
 
     // parse attributes string
     let attributes = match attributes_string {
-        Some(attributes_string) => parse_attributes(attributes_string),
+        Some(attributes_string) => parse_attributes(&attributes_string),
         None => None,
     };
 
@@ -493,22 +555,6 @@ fn parse_unordered_list_item(indent: u16, text: &str) -> Option<Line> {
     return Some(Line::UnorderedListItem { indent, flow });
 }
 
-fn parse_attributes(attributes_string: &str) -> Option<Vec<Attribute>> {
-    let mut attributes = Vec::new();
-    for a in attributes_string.split(",").collect::<Vec<_>>() {
-        let attribute = match a.split_once("=") {
-            Some((key, value)) => Attribute::Pair { key, value },
-            None => Attribute::Tag(a),
-        };
-        attributes.push(attribute);
-    }
-
-    match attributes.is_empty() {
-        false => Some(attributes),
-        true => None,
-    }
-}
-
 fn parse_indentations(line: &str) -> (u16, &str) {
     let mut line = line;
     let mut indents = 0;
@@ -519,9 +565,68 @@ fn parse_indentations(line: &str) -> (u16, &str) {
     (indents, line)
 }
 
+fn parse_attributes(attributes_string: &str) -> Option<Vec<Attribute>> {
+    let mut attributes = Vec::new();
+    for a in attributes_string.split(",").collect::<Vec<_>>() {
+        let attribute = match a.split_once("=") {
+            Some((key, value)) => Attribute::Pair {
+                key: String::from(key),
+                value: String::from(value),
+            },
+            None => Attribute::Tag(String::from(a)),
+        };
+        attributes.push(attribute);
+    }
+
+    match attributes.is_empty() {
+        false => Some(attributes),
+        true => None,
+    }
+}
+
+struct Annotation {
+    name: String,
+    attributes: Option<Vec<Attribute>>,
+}
+fn parse_annotation(annotation_string: &str) -> Annotation {
+    Annotation {
+        name: String::from(annotation_string),
+        attributes: None,
+    }
+}
+
+struct ContainedString {
+    before: String,
+    inner: String,
+    after: String,
+}
+fn parse_contained_string(line: &str, open: &str, close: &str) -> Option<ContainedString> {
+    match line.split_once(open) {
+        Some((before, after)) => match after.split_once(close) {
+            Some((inner, after)) => Some(ContainedString {
+                before: String::from(before),
+                inner: String::from(inner),
+                after: String::from(after),
+            }),
+            None => None,
+        },
+        None => None,
+    }
+}
+
+fn parse_immediate_parentheses(line: &str) -> (Option<String>, &str) {
+    match line.strip_prefix("(") {
+        Some(remaining) => match remaining.split_once(")") {
+            Some((left, right)) => (Some(String::from(left)), right),
+            None => (None, line),
+        },
+        None => (None, line),
+    }
+}
+
 fn is_valid_name_token(token: &str) -> bool {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"\b[a-z]+(?:['-]?[a-z]+)*\b").expect("Invalid Regex");
+        static ref RE: Regex = Regex::new(r"^\b[a-z]+(?:['-]?[a-z]+)*\b$").expect("Invalid Regex");
     }
     RE.is_match(token)
 }
@@ -551,8 +656,8 @@ mod test {
             indent: 0,
             name: "section",
             attributes: Some(vec![Attribute::Pair {
-                key: "class",
-                value: r#""hi""#,
+                key: "class".to_string(),
+                value: r#""hi""#.to_string(),
             }]),
             flow: None,
         };
@@ -579,10 +684,10 @@ mod test {
             name: "section",
             attributes: Some(vec![
                 Attribute::Pair {
-                    key: "class",
-                    value: r#""hi""#,
+                    key: "class".to_string(),
+                    value: r#""hi""#.to_string(),
                 },
-                Attribute::Tag("special"),
+                Attribute::Tag("special".to_string()),
             ]),
             flow: Some(Flow::from("The Title")),
         };
@@ -596,8 +701,8 @@ mod test {
             indent: 2,
             name: "section",
             attributes: Some(vec![Attribute::Pair {
-                key: "class",
-                value: r#""hi""#,
+                key: "class".to_string(),
+                value: r#""hi""#.to_string(),
             }]),
             flow: Some(Flow::from("The Title")),
         };
@@ -667,19 +772,41 @@ mod test {
     #[test]
     fn test_parse() {
         let mut element = parse(r#"source:(hello="world") Header"#).unwrap();
-        let element = match element.children.pop().unwrap() {
+        let element = match element.blocks.pop().unwrap() {
             Child::Element(element) => element,
             _ => panic!(),
         };
         let condition = Element {
-            name: "source",
+            name: "source".to_string(),
             attributes: Some(vec![Attribute::Pair {
-                key: "hello",
-                value: r#""world""#,
+                key: "hello".to_string(),
+                value: r#""world""#.to_string(),
             }]),
-            flow: Some(Flow(vec!["Header"])),
-            children: vec![],
+            flow: vec![Child::CharacterData("Header".to_string())],
+            blocks: vec![],
         };
         assert_eq!(element, condition);
+    }
+
+    #[test]
+    fn test_parse_flow() {
+        let flow = Flow(String::from(r"Hello {world}(test)(test2) goodbye"));
+        let expect = vec![
+            Child::CharacterData("Hello ".to_string()),
+            Child::Element(Element {
+                name: "test".to_string(),
+                attributes: None,
+                flow: vec![Child::Element(Element {
+                    name: "test2".to_string(),
+                    attributes: None,
+                    flow: vec![Child::CharacterData("world".to_string())],
+                    blocks: vec![],
+                })],
+                blocks: vec![],
+            }),
+            Child::CharacterData(" goodbye".to_string()),
+        ];
+        let flow = flow.to_elements();
+        assert_eq!(flow, expect);
     }
 }
