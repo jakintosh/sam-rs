@@ -276,7 +276,7 @@ impl Element {
                 if !flows.is_empty() {
                     // flow + block
                     format!(
-                        "{tabs}<{name}{attr}>\n{tabs}\t<title>\n{tabs}\t\t{flow}\n{tabs}\t</title>\n{bloc}\n{tabs}</{name}>",
+                        "{tabs}<{name}{attr}>\n{tabs}\t<x-section-title>\n{tabs}\t\t{flow}\n{tabs}\t</x-section-title>\n{bloc}\n{tabs}</{name}>",
                         tabs = tabs,
                         name = name,
                         attr = attributes,
