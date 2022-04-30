@@ -625,7 +625,8 @@ fn parse_contained_string(line: &str, open: &str, close: &str) -> Option<Contain
 
 fn is_valid_name_token(token: &str) -> bool {
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"^\b[a-z]+(?:['-]?[a-z]+)*\b$").expect("Invalid Regex");
+        static ref RE: Regex =
+            Regex::new(r"^\b[A-Za-z0-9]+(?:['-]?[A-Za-z0-9]+)*\b$").expect("Invalid Regex");
     }
     RE.is_match(token)
 }
@@ -822,5 +823,20 @@ mod test {
         ];
         let flow = flow.into_elements();
         assert_eq!(flow, expect);
+    }
+
+    #[test]
+    fn test_name_lowercase() {
+        assert!(is_valid_name_token("valid-name"))
+    }
+
+    #[test]
+    fn test_name_uppercase() {
+        assert!(is_valid_name_token("Valid-Name"))
+    }
+
+    #[test]
+    fn test_name_number() {
+        assert!(is_valid_name_token("666-name-666"))
     }
 }
