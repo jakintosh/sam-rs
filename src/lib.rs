@@ -276,7 +276,7 @@ impl Element {
                 if !flows.is_empty() {
                     // flow + block
                     format!(
-                        "{tabs}<{name}{attr}>\n{tabs}\t<x-section-title>\n{tabs}\t\t{flow}\n{tabs}\t</x-section-title>\n{bloc}\n{tabs}</{name}>",
+                        "{tabs}<{name}{attr}>\n{tabs}\t<h1>{flow}</h1>\n{bloc}\n{tabs}</{name}>",
                         tabs = tabs,
                         name = name,
                         attr = attributes,
@@ -304,13 +304,22 @@ impl Element {
                             attr = attributes
                         )
                     } else {
-                        format!(
-                            "{tabs}<{name}{attr}>\n{tabs}\t{flow}\n{tabs}</{name}>",
-                            tabs = tabs,
-                            name = name,
-                            flow = flows,
-                            attr = attributes
-                        )
+                        if name == "p" {
+                            format!(
+                                "{tabs}<{name}{attr}>\n{tabs}\t{flow}\n{tabs}</{name}>",
+                                name = name,
+                                flow = flows,
+                                attr = attributes
+                            )
+                        } else {
+                            format!(
+                                "{tabs}<{name}{attr}>{flow}</{name}>",
+                                tabs = tabs,
+                                name = name,
+                                flow = flows,
+                                attr = attributes
+                            )
+                        }
                     }
                 } else {
                     // niether
