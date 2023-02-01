@@ -29,6 +29,21 @@ html:
 			* Some item
 			* Some other item
 
+			pre:
+				```
+				Literal text can be specified like this, and now we can put all sorts of 
+				normally illegal symbols in here, like source code.
+
+				( routines )
+				: decrement-return ( n --r-- n-1 )
+					~unstash8
+					~decrement8
+					~stash8
+				;
+
+				No problems!
+				```
+
 			You can also nest multiple annotations {like this}(em)(strong), and even give 
 			annotations attributes {like this}(a|href="https://website.com").
 

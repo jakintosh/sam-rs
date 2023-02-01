@@ -213,6 +213,43 @@ impl FromStr for Element {
                     }
                     Element::new("p", None, Some(base_flow))
                 }
+                Line::LiteralFlag {
+                    indent: base_indent,
+                } => {
+                    let mut literal = String::new();
+                    while let Some(line) = lines.next() {
+                        line_num += 1;
+                        match line.parse()? {
+                            Line::LiteralFlag { indent } => {
+                                if indent != base_indent {
+                                    return Err(ParserError::IllegalLiteralFlagIndentation {
+                                        line: line_num,
+                                    });
+                                }
+                                match literal.strip_suffix('\n') {
+                                    Some(literal) => {
+                                        stack.push_child(Child::CharacterData(literal.to_string()))
+                                    }
+                                    None => panic!("literal flag close should always end with \\n"),
+                                }
+
+                                break;
+                            }
+                            _ => match trim_indentations(line, base_indent) {
+                                Some(s) => {
+                                    literal.push_str(s);
+                                    literal.push('\n');
+                                }
+                                None => {
+                                    return Err(ParserError::IllegalLiteralBlockIndentation {
+                                        line: line_num,
+                                    });
+                                }
+                            },
+                        }
+                    }
+                    continue;
+                }
                 _ => continue,
             };
 
@@ -354,6 +391,9 @@ impl Element {
     pub(crate) fn add_child_element(&mut self, child: Element) {
         self.blocks.push(Child::Element(child))
     }
+    pub(crate) fn add_child_text(&mut self, text: String) {
+        self.blocks.push(Child::CharacterData(text))
+    }
 }
 
 /*
@@ -381,6 +421,9 @@ enum Line {
         indent: u16,
         flow: Flow,
     },
+    LiteralFlag {
+        indent: u16,
+    },
     Blank,
 }
 impl FromStr for Line {
@@ -390,6 +433,8 @@ impl FromStr for Line {
         let (indent, text) = split_indentations(s);
         if s.trim().is_empty() {
             Ok(Line::Blank)
+        } else if text == "```" {
+            Ok(Line::LiteralFlag { indent })
         } else if let Some(block_line) = try_parse_block_line(indent, text) {
             Ok(block_line)
         } else if let Some(ordered_list_line) = try_parse_ordered_list_line(indent, text) {
@@ -408,7 +453,8 @@ impl Line {
             Line::Block { indent, .. }
             | Line::OrderedListItem { indent, .. }
             | Line::UnorderedListItem { indent, .. }
-            | Line::Paragraph { indent, .. } => Some(*indent),
+            | Line::Paragraph { indent, .. }
+            | Line::LiteralFlag { indent } => Some(*indent),
             Line::Blank => None,
         }
     }
@@ -427,6 +473,16 @@ impl Stack {
     }
     pub(crate) fn open(&mut self, element: Element) {
         self.stack.push(element);
+    }
+    pub(crate) fn push_child(&mut self, child: Child) {
+        let last = match self.stack.last_mut() {
+            Some(l) => l,
+            None => todo!(),
+        };
+        match child {
+            Child::Element(e) => last.add_child_element(e),
+            Child::CharacterData(text) => last.add_child_text(text),
+        }
     }
     pub(crate) fn close(&mut self) {
         let e = match self.stack.pop() {
@@ -473,6 +529,12 @@ pub enum ParserError {
     #[error("Line {line}: Invalid paragraph terminator; paragraph must be ended with blank line")]
     IllegalParagraphTerminator { line: usize },
 
+    #[error("Line {line}: Opening and closing literal flags must have the same indentation")]
+    IllegalLiteralFlagIndentation { line: usize },
+
+    #[error("Line {line}: All lines in literal block must be <= indentation than root")]
+    IllegalLiteralBlockIndentation { line: usize },
+
     #[error("Line {line}: Invalid child nested; paragraphs and list items cannot have children")]
     IllegalChild { line: usize },
 
@@ -488,6 +550,13 @@ fn split_indentations(line: &str) -> (u16, &str) {
         indents += 1;
     }
     (indents, line)
+}
+
+fn trim_indentations(line: &str, indent: u16) -> Option<&str> {
+    match line.is_empty() {
+        true => Some(line), // if empty, stay empty
+        false => line.strip_prefix(&"\t".repeat(indent as usize)),
+    }
 }
 
 fn try_parse_block_line(indent: u16, text: &str) -> Option<Line> {
