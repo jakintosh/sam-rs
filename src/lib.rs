@@ -213,14 +213,14 @@ impl FromStr for Element {
                     }
                     Element::new("p", None, Some(base_flow))
                 }
-                Line::LiteralFlag {
+                Line::LiteralBlockFlag {
                     indent: base_indent,
                 } => {
                     let mut literal = String::new();
                     while let Some(line) = lines.next() {
                         line_num += 1;
                         match line.parse()? {
-                            Line::LiteralFlag { indent } => {
+                            Line::LiteralBlockFlag { indent } => {
                                 if indent != base_indent {
                                     return Err(ParserError::IllegalLiteralFlagIndentation {
                                         line: line_num,
@@ -229,6 +229,43 @@ impl FromStr for Element {
                                 match literal.strip_suffix('\n') {
                                     Some(literal) => {
                                         stack.push_child(Child::CharacterData(literal.to_string()))
+                                    }
+                                    None => panic!("literal flag close should always end with \\n"),
+                                }
+
+                                break;
+                            }
+                            _ => match trim_indentations(line, base_indent) {
+                                Some(s) => {
+                                    literal.push_str(s);
+                                    literal.push('\n');
+                                }
+                                None => {
+                                    return Err(ParserError::IllegalLiteralBlockIndentation {
+                                        line: line_num,
+                                    });
+                                }
+                            },
+                        }
+                    }
+                    continue;
+                }
+                Line::LiteralFlowFlag {
+                    indent: base_indent,
+                } => {
+                    let mut literal = String::new();
+                    while let Some(line) = lines.next() {
+                        line_num += 1;
+                        match line.parse()? {
+                            Line::LiteralFlowFlag { indent } => {
+                                if indent != base_indent {
+                                    return Err(ParserError::IllegalLiteralFlagIndentation {
+                                        line: line_num,
+                                    });
+                                }
+                                match literal.strip_suffix('\n') {
+                                    Some(literal) => {
+                                        stack.push_flow(Child::CharacterData(literal.to_string()))
                                     }
                                     None => panic!("literal flag close should always end with \\n"),
                                 }
@@ -394,6 +431,12 @@ impl Element {
     pub(crate) fn add_child_text(&mut self, text: String) {
         self.blocks.push(Child::CharacterData(text))
     }
+    pub(crate) fn add_flow_element(&mut self, child: Element) {
+        self.flow.push(Child::Element(child))
+    }
+    pub(crate) fn add_flow_text(&mut self, text: String) {
+        self.flow.push(Child::CharacterData(text))
+    }
 }
 
 /*
@@ -421,7 +464,10 @@ enum Line {
         indent: u16,
         flow: Flow,
     },
-    LiteralFlag {
+    LiteralBlockFlag {
+        indent: u16,
+    },
+    LiteralFlowFlag {
         indent: u16,
     },
     Blank,
@@ -434,7 +480,9 @@ impl FromStr for Line {
         if s.trim().is_empty() {
             Ok(Line::Blank)
         } else if text == "```" {
-            Ok(Line::LiteralFlag { indent })
+            Ok(Line::LiteralBlockFlag { indent })
+        } else if text == "~~~" {
+            Ok(Line::LiteralFlowFlag { indent })
         } else if let Some(block_line) = try_parse_block_line(indent, text) {
             Ok(block_line)
         } else if let Some(ordered_list_line) = try_parse_ordered_list_line(indent, text) {
@@ -454,7 +502,8 @@ impl Line {
             | Line::OrderedListItem { indent, .. }
             | Line::UnorderedListItem { indent, .. }
             | Line::Paragraph { indent, .. }
-            | Line::LiteralFlag { indent } => Some(*indent),
+            | Line::LiteralBlockFlag { indent }
+            | Line::LiteralFlowFlag { indent } => Some(*indent),
             Line::Blank => None,
         }
     }
@@ -482,6 +531,16 @@ impl Stack {
         match child {
             Child::Element(e) => last.add_child_element(e),
             Child::CharacterData(text) => last.add_child_text(text),
+        }
+    }
+    pub(crate) fn push_flow(&mut self, child: Child) {
+        let last = match self.stack.last_mut() {
+            Some(l) => l,
+            None => todo!(),
+        };
+        match child {
+            Child::Element(e) => last.add_flow_element(e),
+            Child::CharacterData(text) => last.add_flow_text(text),
         }
     }
     pub(crate) fn close(&mut self) {
@@ -553,7 +612,7 @@ fn split_indentations(line: &str) -> (u16, &str) {
 }
 
 fn trim_indentations(line: &str, indent: u16) -> Option<&str> {
-    match line.is_empty() {
+    match line.trim().is_empty() {
         true => Some(line), // if empty, stay empty
         false => line.strip_prefix(&"\t".repeat(indent as usize)),
     }

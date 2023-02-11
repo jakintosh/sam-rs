@@ -46,8 +46,10 @@ fn parse_batch(in_path: String, out_path: String, dryrun: bool) -> Result<()> {
 }
 
 fn parse_file(in_path: String, out_path: String, dryrun: bool) -> Result<()> {
-    let input = std::fs::read_to_string(in_path).context("Couldn't load source file")?;
-    let root: Element = input.parse().context("Failed to parse input")?;
+    let input = std::fs::read_to_string(&in_path).context("Couldn't load source file")?;
+    let root: Element = input
+        .parse()
+        .context(format!("{}: Failed to parse input", in_path))?;
     let xml = root.to_xml(0, false);
 
     match dryrun {
