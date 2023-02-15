@@ -1,5 +1,3 @@
-use lazy_static::lazy_static;
-use regex::Regex;
 use std::{fmt::Display, str::FromStr};
 use thiserror::Error;
 
@@ -761,11 +759,15 @@ fn parse_contained_string(line: &str, open: &str, close: &str) -> Option<Contain
 }
 
 fn is_valid_name_token(token: &str) -> bool {
-    lazy_static! {
-        static ref RE: Regex =
-            Regex::new(r"^\b[A-Za-z0-9]+(?:['-]?[A-Za-z0-9]+)*\b$").expect("Invalid Regex");
+    for word in token.split('-') {
+        if word.is_empty() {
+            return false;
+        }
+        if word.chars().any(|c| !char::is_ascii_alphanumeric(&c)) {
+            return false;
+        }
     }
-    RE.is_match(token)
+    return true;
 }
 
 #[cfg(test)]
@@ -975,5 +977,12 @@ mod test {
     #[test]
     fn test_name_number() {
         assert!(is_valid_name_token("666-name-666"))
+    }
+
+    #[test]
+    fn test_name_invalid() {
+        assert!(!is_valid_name_token("name-"));
+        assert!(!is_valid_name_token("name--test"));
+        assert!(!is_valid_name_token("name-te#st"));
     }
 }
