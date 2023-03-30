@@ -27,7 +27,12 @@ html:
 			3. Third item
 
 			* Some item
+				1. Some nested numbered item
+				2. Some second nested numbered item
 			* Some other item
+			* Some more items
+			* Even more items
+				* Yet another nested item
 
 			pre:
 				```

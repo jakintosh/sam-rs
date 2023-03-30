@@ -1,4 +1,8 @@
-use std::{fmt::Display, str::FromStr};
+use std::{
+    fmt::Display,
+    iter::Peekable,
+    str::{FromStr, Lines},
+};
 use thiserror::Error;
 
 /*
@@ -91,7 +95,7 @@ impl Annotation {
 }
 
 // Child
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Child {
     Element(Element),
     CharacterData(String),
@@ -106,7 +110,7 @@ impl Child {
 }
 
 // Element
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Element {
     name: String,
     attributes: Option<Vec<Attribute>>,
@@ -133,54 +137,18 @@ impl FromStr for Element {
                     ..
                 } => Element::new(&name, attributes, flow),
 
-                Line::OrderedListItem {
-                    indent: base_indent,
-                    flow,
-                } => {
-                    let mut ol = Element::new("ol", None, None);
-                    ol.add_child_element(Element::new("li", None, Some(flow)));
-                    while let Some(peek) = lines.peek() {
-                        match peek.parse()? {
-                            Line::OrderedListItem { indent, flow } => {
-                                lines.next(); // consume the peek
-                                line_num += 1;
-
-                                if indent != base_indent {
-                                    return Err(ParserError::IllegalChild { line: line_num });
-                                }
-                                ol.add_child_element(Element::new("li", None, Some(flow)));
-                            }
-                            _ => {
-                                break;
-                            }
-                        };
+                Line::OrderedListItem { indent, flow } => {
+                    match process_list("ol", &mut lines, indent, flow, &mut line_num) {
+                        Ok(element) => element,
+                        Err(e) => return Err(e),
                     }
-                    ol
                 }
 
-                Line::UnorderedListItem {
-                    indent: base_indent,
-                    flow,
-                } => {
-                    let mut ul = Element::new("ul", None, None);
-                    ul.add_child_element(Element::new("li", None, Some(flow)));
-                    while let Some(peek) = lines.peek() {
-                        match peek.parse()? {
-                            Line::UnorderedListItem { indent, flow } => {
-                                lines.next(); // consume the peek
-                                line_num += 1;
-
-                                if indent != base_indent {
-                                    return Err(ParserError::IllegalChild { line: line_num });
-                                }
-                                ul.add_child_element(Element::new("li", None, Some(flow)));
-                            }
-                            _ => {
-                                break;
-                            }
-                        };
+                Line::UnorderedListItem { indent, flow } => {
+                    match process_list("ul", &mut lines, indent, flow, &mut line_num) {
+                        Ok(element) => element,
+                        Err(e) => return Err(e),
                     }
-                    ul
                 }
 
                 Line::Paragraph {
@@ -435,6 +403,12 @@ impl Element {
     pub(crate) fn add_flow_text(&mut self, text: String) {
         self.flow.push(Child::CharacterData(text))
     }
+    pub(crate) fn move_flow_to_blocks(&mut self) {
+        for child in &self.flow {
+            self.blocks.push(child.clone());
+        }
+        self.flow.clear();
+    }
 }
 
 /*
@@ -616,6 +590,79 @@ fn trim_indentations(line: &str, indent: u16) -> Option<&str> {
     }
 }
 
+fn process_list(
+    list_type: &str,
+    lines: &mut Peekable<Lines>,
+    base_indent: u16,
+    flow: Flow,
+    line_num: &mut usize,
+) -> Result<Element, ParserError> {
+    fn stack_depth(s: &Vec<Element>) -> usize {
+        (s.len() / 2) - 1
+    }
+    fn collapse_item(stack: &mut Vec<Element>) {
+        let item = stack.pop().unwrap();
+        stack.last_mut().unwrap().add_child_element(item);
+    }
+    fn collapse_list(stack: &mut Vec<Element>) {
+        let list = stack.pop().unwrap();
+        stack.last_mut().unwrap().move_flow_to_blocks();
+        stack.last_mut().unwrap().add_child_element(list);
+    }
+    fn collapse_stack(depth: usize, mut stack: &mut Vec<Element>) {
+        while stack_depth(&stack) > depth {
+            collapse_item(&mut stack);
+            collapse_list(&mut stack);
+        }
+        collapse_item(&mut stack);
+    }
+
+    let mut list_stack = vec![
+        Element::new(list_type, None, None),
+        Element::new("li", None, Some(flow)),
+    ];
+    while let Some(peek) = lines.peek() {
+        let line = peek.parse()?;
+        match line {
+            Line::UnorderedListItem { indent, ref flow }
+            | Line::OrderedListItem { indent, ref flow } => {
+                if base_indent > indent {
+                    break;
+                }
+
+                lines.next(); // consume the peek
+                *line_num += 1;
+
+                let depth = i32::from(indent - base_indent);
+                let stack_depth: i32 = stack_depth(&list_stack).try_into().unwrap();
+                match depth - stack_depth {
+                    indents if indents > 1 => {
+                        return Err(ParserError::MoreThanOneIndent {
+                            line: *line_num,
+                            indents,
+                        });
+                    }
+                    1 => {
+                        let list_type = match &line {
+                            Line::OrderedListItem { .. } => "ol",
+                            Line::UnorderedListItem { .. } => "ul",
+                            _ => unreachable!(),
+                        };
+                        list_stack.push(Element::new(list_type, None, None))
+                    }
+                    _ => collapse_stack(depth as usize, &mut list_stack),
+                }
+                list_stack.push(Element::new("li", None, Some(flow.clone())));
+            }
+            _ => {
+                break;
+            }
+        };
+    }
+    collapse_stack(0, &mut list_stack);
+    Ok(list_stack.pop().unwrap())
+}
+
 fn try_parse_block_line(indent: u16, text: &str) -> Option<Line> {
     // check for and split on required colon
     let (name_candidate, remainder) = match text.split_once(":") {
@@ -690,14 +737,15 @@ fn try_parse_ordered_list_line(indent: u16, text: &str) -> Option<Line> {
 
 fn try_parse_unordered_list_line(indent: u16, text: &str) -> Option<Line> {
     // split on first space
-    let (asterisk_candidate, flow) = match text.split_once(" ") {
+    let (bullet_candidate, flow) = match text.split_once(" ") {
         Some((a, f)) => (a, f),
         None => return None,
     };
 
-    // make sure required '*'
-    if !asterisk_candidate.eq("*") {
-        return None;
+    // make sure required '*' or '-'
+    match bullet_candidate {
+        "*" | "-" => {}
+        _ => return None,
     }
 
     // make sure flow isn't empty
@@ -880,6 +928,42 @@ mod test {
             flow: "Hello".into(),
         };
         assert_eq!(line, condition);
+    }
+
+    #[test]
+    fn test_unordered_list_nest_line() {
+        let mut element = "* Hello\n\t* Test"
+            .parse::<Element>()
+            .expect("Failed to parse line");
+        let element = match element.blocks.pop().unwrap() {
+            Child::Element(element) => element,
+            _ => panic!(),
+        };
+        let expect = Element {
+            name: "ul".to_string(),
+            attributes: None,
+            flow: vec![],
+            blocks: vec![Child::Element(Element {
+                name: "li".to_string(),
+                attributes: None,
+                flow: vec![],
+                blocks: vec![
+                    Child::CharacterData("Hello".to_string()),
+                    Child::Element(Element {
+                        name: "ul".to_string(),
+                        attributes: None,
+                        flow: vec![],
+                        blocks: vec![Child::Element(Element {
+                            name: "li".to_string(),
+                            attributes: None,
+                            flow: vec![Child::CharacterData("Test".to_string())],
+                            blocks: vec![],
+                        })],
+                    }),
+                ],
+            })],
+        };
+        assert_eq!(element, expect);
     }
 
     #[test]
