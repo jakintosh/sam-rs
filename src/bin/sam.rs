@@ -1,6 +1,9 @@
 // use anyhow::{Context, Result};
 use sam_rs::Element;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process,
+};
 
 const HELP: &str = "
 collate v1 by @jakintosh
@@ -93,6 +96,7 @@ fn main() {
     };
     if let Err(e) = result {
         println!("Parse failure: {}", e);
+        process::exit(1)
     }
 }
 
